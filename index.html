@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detección de Objetos en Tiempo Real</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        #videoContainer {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        #video, #canvas {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        #objectList {
+            background-color: #f9f9f9;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        #objectList h2 {
+            margin-top: 0;
+        }
+        #error {
+            color: red;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Detección de Objetos en Tiempo Real</h1>
+        <div id="videoContainer">
+            <video id="video" autoplay muted></video>
+            <canvas id="canvas"></canvas>
+        </div>
+        <div id="error"></div>
+        <div id="objectList">
+            <h2>Objetos Detectados</h2>
+            <ul id="detectedObjects"></ul>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const objectList = document.getElementById('detectedObjects');
+        const errorDiv = document.getElementById('error');
+
+        let model;
+        let detectedObjects = new Map();
+
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resolve(video);
+                    };
+                });
+            } catch (error) {
+                errorDiv.textContent = 'Error al acceder a la cámara: ' + error.message;
+                throw error;
+            }
+        }
+
+        async function loadModel() {
+            try {
+                model = await cocoSsd.load();
+            } catch (error) {
+                errorDiv.textContent = 'Error al cargar el modelo: ' + error.message;
+                throw error;
+            }
+        }
+
+        function drawPredictions(predictions) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            predictions.forEach(prediction => {
+                const [x, y, width, height] = prediction.bbox;
+                ctx.strokeStyle = '#00FFFF';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(x, y, width, height);
+
+                ctx.fillStyle = '#00FFFF';
+                ctx.font = '18px Arial';
+                ctx.fillText(`${prediction.class} - ${Math.round(prediction.score * 100)}%`, x, y > 10 ? y - 5 : 10);
+
+                if (!detectedObjects.has(prediction.class)) {
+                    const now = new Date();
+                    detectedObjects.set(prediction.class, now.toLocaleTimeString());
+                    updateObjectList();
+                }
+            });
+        }
+
+        function updateObjectList() {
+            objectList.innerHTML = '';
+            detectedObjects.forEach((time, object) => {
+                const li = document.createElement('li');
+                li.textContent = `${object} - Detectado a las ${time}`;
+                objectList.appendChild(li);
+            });
+        }
+
+        async function detectObjects() {
+            const predictions = await model.detect(video);
+            drawPredictions(predictions);
+            setTimeout(detectObjects, 500); // 2 FPS
+        }
+
+        async function startApp() {
+            await setupCamera();
+            video.play();
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            await loadModel();
+            detectObjects();
+        }
+
+        startApp().catch(error => {
+            console.error('Error al iniciar la aplicación:', error);
+        });
+    </script>
+</body>
+</html>
